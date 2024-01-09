@@ -19,11 +19,13 @@ def merge_dicts(*dicts):
 class VKs:
     # clien это массив в котором лежат [[CLIENT_ID, CLIENT_SECRET], [CLIENT_ID, CLIENT_SECRET]]
     def __init__(self, clients):
-        self.vks = []
+        self.new_vks = []
+        self.old_vks = []
 
         self.clients = clients
         self.statics = None  # json_header
-        self.data = None  # json_data
+        self.new_data= None  # json_data
+        self.old_data = None
 
         self.date_from = None
         self.date_to = None
@@ -34,49 +36,77 @@ class VKs:
     def start(self):
         for client in self.clients:
             if len(client) > 1:
-                vk = self.VK(client[0], client[1])  # Создаем ВК объекты
-                self.vks.append(vk)
+                vk = self.VK_new(client[0], client[1])  # Создаем ВК объекты
+                self.new_vks.append(vk)
             else:
                 vk = self.Vk_old(client[0])
-                print(vk._get_statistic('2022-07-05', '2024-01-08'))
-
-
+                self.old_vks.append(vk)
 
     # Проверка работоспособности токенов
     def validate(self):
-        for vk in self.vks:
-            vk._validate()
+        try:
+            vks = *self.new_vks, *self.old_vks
+            for vk in vks:
+                if not vk._validate():
+                    return False
+
+            return True
+        except Exception as e:
+            logger.exception('Ошибка валидации данных: ' + str(e))
 
     # Функция сохранения data в json
     def save_data_json(self, name):
 
         with open(f'{name}.json', 'w', encoding='utf-8') as f:
             # Функция `dump` записывает объект data в открытый файл
-            json.dump(self.data, f, ensure_ascii=False, indent=4)
+            json.dump(self.new_data, f, ensure_ascii=False, indent=4)
 
-    # # Функция выдачи статистики по людям
-    # def get_statistics_users(self, date1, date2, ids=None):
-    #     return self._get_statistics(date1, date2, 'users', ids)
-    #
-    # # Функция выдачи статистики по рекламным компаниями
-    # def get_statistics_ad_company(self, date1, date2, ids=None):
-    #     return self._get_statistics(date1, date2, 'ad_plans', ids)
-    #
-    # # Функция выдачи статистики по группам банеров
-    # def get_statistics_group_banners(self, date1, date2, ids=None):
-    #     return self._get_statistics(date1, date2, 'ad_groups', ids)
+    # Функция выдачи названий столбцов для старого кабинета
+    def get_old_header(self):
+        try:
+            return 'ad_id, campaign_id, category1_id, category2_id, account_id, day, clicks, link_external_clicks, impressions, join_rate, reach, spent' # f"{', '.join(self.old_data[0].keys())}"
+        except Exception as e:
+            logger.exception('Ошибка выдачи названий столбцов для старого кабинета ' + str(e))
+
+    # Функция выдачи названий столбцов для нового кабинета
+    def get_new_header(self):
+        try:
+
+            return f"{', '.join(self.new_data[0].keys())}"
+        except Exception as e:
+            logger.exception('Ошибка выдачи названий столбцов для нового кабинета ' + str(e))
+
+    # Функция выдачи статистики по 1 промежутку для разных кабинетов
+    def get_all_statostics(self, date1, date2):
+        try:
+
+            if self.old_vks:
+                self.old_data = self._get_old_statistics(date1, date2)
+
+            if self.new_vks:
+                self.new_data = self._get_statistics_banners(date1, date2)
+
+            return self.new_data, self.old_data
+        except Exception as e:
+            logger.exception('Ошибка  выдачи статистики по 1 промежутку для разных кабинетов: ' + str(e))
 
     # Функция выдачи статистики по банерам
-    def get_statistics_banners(self, date1, date2, ids=None):
-        data_banners = self._get_statistics(date1, date2, 'banners', ids)
+    def _get_statistics_banners(self, date1, date2, ids=None):
+        try:
+            data_banners = self._get_new_statistics(date1, date2, 'banners', ids)
 
-        return self._refresh_banners_included(data_banners)
+            self.new_data = self._refresh_banners_included(data_banners)
+
+            return self.new_data
+        except Exception as e:
+            logger.exception('Ошибка выдачи статистики по банерам: ' + str(e))
+
 
     # Функция добавления родителей к баннеру
     def _refresh_banners_included(self, data_banners):
         try:
             data = {}
-            for vk in self.vks:
+            for vk in self.new_vks:
                 banners = vk._get_banners()
 
                 for banner in banners:
@@ -87,32 +117,56 @@ class VKs:
                         'ad_plan_id': ad_plan
                     }
 
-            for banner in data_banners:
-                banner_data = data.get(banner['id'])
+            for ban in data_banners:
+                banner_data = data.get(ban['id'])
                 if banner_data:
-                    banner.update(banner_data)
+                    ban.update(banner_data)
 
-            return banner
+            return data_banners
         except Exception as e:
             logger.exception('Ошибка добавления родителей к баннерам: ' + str(e))
 
-    # Функция выдачи статистики
-    def _get_statistics(self, date1, date2, company='ad_plans', id=None):
+    # Функция выдачи статистики для нового кабинета
+    def _get_new_statistics(self, date1, date2, company='ad_plans', id=None):
         try:
             self.date_from = date1
             self.date_to = date2
             statics = []
             # собираем статичтику в массив
-            for vk in self.vks:
-                statics.append(
-                    vk._get_statistic(date_from=self.date_from, date_to=self.date_to, company=company, id=id))
-            # объединяем все json в один
-            self.statics = merge_dicts(*statics)
-            self.data = self.get_data_from_hedears(self.statics)
+            for vk in self.new_vks:
+                logger.info('Работаю  с новым кабинетом ')
+                stats = vk._get_statistic(date_from=self.date_from, date_to=self.date_to, company=company, id=id)
 
-            return self.data
+                if stats:
+                    statics.append(stats)
+            # объединяем все json в один
+            statics = merge_dicts(*statics)
+            new_data = self.get_data_from_hedears(statics)
+
+            return new_data
         except Exception as e:
-            logger.exception('Ошибка выдачи ститистики: ' + str(e))
+            logger.exception('Ошибка выдачи ститистики для нового кабинета: ' + str(e))
+
+    # Функция выдачи статистики для старого кабинета
+    def _get_old_statistics(self, date1, date2, ids_type='office', ids=None):
+        try:
+            self.date_from = date1
+            self.date_to = date2
+            statics = []
+
+            # собираем статичтику в массив
+            for vk in self.old_vks:
+                stats = vk._get_old_statistic(date_from=self.date_from, date_to=self.date_to, ids=ids, ids_type=ids_type)
+
+                if stats:
+                    statics.extend(stats)
+                else:
+                    logger.warning('По данному даипозону для токена ' + vk.access_token[:5] + "ничего не найденно")
+            self.old_data = statics
+
+            return statics
+        except Exception as e:
+            logger.exception('Ошибка выдачи ститистики для старого кабинета: ' + str(e))
 
     # Доп функция для изменения ключа в словоре data
     def _prefix_dict(self, d, prefix):
@@ -169,6 +223,7 @@ class VKs:
             self.access_token = access_token
             self.v = 5.81
             self.statistics = None
+            self.data = {}
 
         # функция валидации
         def _validate(self):
@@ -183,24 +238,81 @@ class VKs:
 
             return False
 
-        # Возвращает статистику показателей эффективности
-        def _get_statistic(self, date1, date2, ids=None, ids_type='office', period='day'):
+        # Возвращает статистику показателей эффективности по постам
+        def _get_old_statistic(self, date_from, date_to, ids=None, account_id=None, ids_type='office', period='day'):
             try:
-                account_id = ids
                 if not ids:
                     accounts = self._get_accounts()['response']
+
                     data = []
                     for acc in accounts:
-                        time.sleep(1)
-                        data.append(self._get_statistic(date1, date2, acc['account_id']))
-                        print(data)
+                        if acc['account_type'] == 'agency':
+                            time.sleep(0.33)
+                            users = self._get_client(acc['account_id'])['response']
 
-                    return merge_dicts(*data)
+                            if users:
+                                ads = []
+                                for user in users:
+                                    time.sleep(0.33)
+                                    ad = self._get_ads(acc['account_id'], client_id=user.get('id'))
 
-                url = "ads.getStatistics", f"date_from={date1}&date_to={date2}&account_id={account_id}&ids_type={ids_type}&period={period}&ids={ids}&stats_fields=id"
-                return self._use_method(*url)
+                                    ads.append(ad)
+
+                                ads = merge_dicts(*ads)
+                            else:
+                                continue
+
+                        else:
+                            time.sleep(0.33)
+                            ads = self._get_ads(acc['account_id'])
+
+                        if ads.get('error'):
+                            logger.warning('В ads старого кабинета была найдена ошибка: ' + str(ads))
+                            continue
+
+                        self.data[str(acc["account_id"])] = ads['response']
+
+                        ids_ads = [ad.get("id") for ad in ads['response']]
+
+                        time.sleep(0.33)
+
+                        data.append(self._get_old_statistic(date_from, date_to, ids_ads, acc['account_id'], ids_type='ad'))
+
+                    return self._refresh_and_merge(merge_dicts(*data)['response'], self.data)
+
+                url = "ads.getStatistics", f"date_from={date_from}&date_to={date_to}&account_id={account_id}&ids_type={ids_type}&period={period}&ids={ids}&stats_fields=id"
+
+                response = self._use_method(*url)
+
+                return response
+
             except Exception as e:
                 logger.exception('Ошибка получения списока рекламных объявлений: ' + str(e))
+
+        # Возврашаем объедененные и преобразованные данные стастистики
+        def _refresh_and_merge(self, data1, data2):
+            return [
+                {
+                    'ad_id': ad['id'],
+                    'campaign_id': ad['campaign_id'],
+                    'category1_id': ad['category1_id'],
+                    'category2_id': ad['category2_id'],
+                    'account_id': k1,
+                    'day': stat['day'],
+                    'clicks': stat.get('clicks', 0),
+                    'link_external_clicks': stat.get('link_external_clicks', 0),
+                    'impressions': stat.get('impressions', 0),
+                    'join_rate': stat.get('join_rate', 0),
+                    'reach': stat.get('reach', 0),
+                    'spent': stat.get('spent', 0),
+                }
+                for d1 in data1 # проходимя по data1  если в d1 есть стаститика проверяем ид в data2 если все ок все соединяем
+                if d1['stats']
+                for k1, v1 in data2.items()
+                for ad in v1
+                if d1['id'] == ad['id']
+                for stat in d1['stats']
+            ]
 
         # Возвращает список рекламных кабинетов
         def _get_accounts(self):
@@ -211,8 +323,12 @@ class VKs:
                 logger.exception('Ошибка получения списока рекламных объявлений: ' + str(e))
 
         # Возвращает список рекламных объявлений
-        def _get_ads(self, account_id):
+        def _get_ads(self, account_id, client_id=None):
             try:
+
+                if client_id is not None:
+                    account_id = str(account_id) + f"&client_id={str(client_id)}"
+
                 url = "ads.getAds", f"account_id={account_id}"
                 return self._use_method(*url)
             except Exception as e:
@@ -244,7 +360,7 @@ class VKs:
             except Exception as e:
                 logger.exception(f'Ошибка использования метода {method}: ' + str(e))
 
-    class VK:
+    class VK_new:
 
         def __init__(self, client_id, client_secret):
             self.access_token = None
@@ -363,13 +479,12 @@ class VKs:
                     param['id'] = id
 
                 res = self._use_method(f'/api/v2/statistics/{company}/day.json', param)
-
                 del res['total']
 
                 return res
 
             except Exception as e:
-                logger.exception('ВК статистика не получена: ' + str(e))
+                logger.exception('ВК статистика не получена: ' + str(e) + str(res.get('error')))
 
         # Доп функция для использования методов api
         def _use_method(self, method, param):
@@ -404,13 +519,9 @@ class VKs:
 
 if __name__ == '__main__':
     clients = [['zawG5V96vFJJ1EJI',
-                '7E1GWhpLPaCcHtmtayt5C7aPJWSVLx0S2X3C3SgA8BalOuYCZj9JhhE3bL6mEfuVovpj4JHK6OU74JGjk9RKsPjfhqzbuDzm1BgWMJ9kocc9gjPxA6MDChgVY4WFwfuhAtixAIqy4ZWwaRklGQJUbiGIP2w2f2syjea6Ru2gyV75LJR8kBf0riLaycaXM846s401zZhqWXJc831IYdR7AMSLzqvetRxEDMn0Du3PXo2ygUI1vAROOKu'],
-               ]
-    clients = [['vk1.a.hS8SS70suHSGGS7gyIW1RUwMmD0b2dmZNLCF5Xryw5-PRlkXBdBlB4kJbYpesHQCJBif6beMwefql_I5QxHuRJFXQyl_nnaq5MBt7toYOoNyVae__CpUrR3b398H62Z-YAX1Y5gP4pgdBKpUHZqRzwerWQP6MklDbQIcNh8H5VK_gkpeCfYv_OgM-8pBmSWPoSGfxU8pKtYmeOBfeeE5JA']]
+                '7E1GWhpLPaCcHtmtayt5C7aPJWSVLx0S2X3C3SgA8BalOuYCZj9JhhE3bL6mEfuVovpj4JHK6OU74JGjk9RKsPjfhqzbuDzm1BgWMJ9kocc9gjPxA6MDChgVY4WFwfuhAtixAIqy4ZWwaRklGQJUbiGIP2w2f2syjea6Ru2gyV75LJR8kBf0riLaycaXM846s401zZhqWXJc831IYdR7AMSLzqvetRxEDMn0Du3PXo2ygUI1vAROOKu'],]
+    ['vk1.a.hS8SS70suHSGGS7gyIW1RUwMmD0b2dmZNLCF5Xryw5-PRlkXBdBlB4kJbYpesHQCJBif6beMwefql_I5QxHuRJFXQyl_nnaq5MBt7toYOoNyVae__CpUrR3b398H62Z-YAX1Y5gP4pgdBKpUHZqRzwerWQP6MklDbQIcNh8H5VK_gkpeCfYv_OgM-8pBmSWPoSGfxU8pKtYmeOBfeeE5JA']
     vks = VKs(clients)
-    # static = vks.get_statistics_banners('2023-07-10', '2023-07-15')
-    # vks.save_data_json('staticBaners')
-    # static = vks.get_statistics_group_banners('2023-07-10', '2023-07-15')
-    # vks.save_data_json('staticGroupBaber')
-    # static = vks.get_statistics_ad_company('2023-07-10', '2023-07-15')
-    # vks.save_data_json('staticAdCompany')
+    print(vks.get_all_statostics('2023-08-24', '2023-08-26'))
+    print(vks.get_old_header())
+    print(vks.get_new_header())
