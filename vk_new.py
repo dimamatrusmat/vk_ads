@@ -324,7 +324,7 @@ class VKs_new:
 
 if __name__ == '__main__':
     # @abolior - tg
-    clients = [['zawG5V96vFJJ12EJI',
-                '7E1GWhpLPaCcHtmtayt15C7aPJWSVLx0S2X3C3SgA8BalOuYCZj9JhhE3bL6mEfuVovpj4JHK6OU74JGjk9RKsPjfhqzbuDzm1BgWMJ9kocc9gjPxA6MDChgVY4WFwfuhAtixAIqy4ZWwaRklGQJUbiGIP2w2f2syjea6Ru2gyV75LJR8kBf0riLaycaXM846s401zZhqWXJc831IYdR7AMSLzqvetRxEDMn0Du3PXo2ygUI1vAROOKu'],]
+    clients = [['zawG5V96vFJ12EJI',
+                '7E1GWhpLPaCcHtmtayt15C7aPJWSVLxS2X3C3SgA8BalOuYCZj9JhhE3bL6mEfuVovpj4JHK6OU74JGjk9RKsPjfhqzbuDzm1BgWMJ9kocc9gjPxA6MDChgVY4WFwfuhAtixAIqy4ZWwaRklGQJUbiGIP2w2f2syjea6Ru2gyV75LJR8kBf0riLaycaXM846s401zZhqWXJc831IYdR7AMSLzqvetRxEDMn0Du3PXo2ygUI1vAROOKu'],]
     vks = VKs_new(clients)
     print(vks.get_statistics('2023-07-24', '2023-08-26'))
